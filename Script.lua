@@ -4424,7 +4424,7 @@ local teleportPlayerListKey = ""
 local updatingTeleportKillerDropdown = false
 local updatingTeleportPlayerDropdown = false
 
-local function TeleportGetRoot(character)
+function TeleportGetRoot(character)
     if not character then return nil end
     return character:FindFirstChild("HumanoidRootPart") or character:FindFirstChild("Torso")
 end
