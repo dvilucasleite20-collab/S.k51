@@ -4429,7 +4429,7 @@ function TeleportGetRoot(character)
     return character:FindFirstChild("HumanoidRootPart") or character:FindFirstChild("Torso")
 end
 
-local function TeleportGetAliveKillerOptions()
+function TeleportGetAliveKillerOptions()
     local options, seen = {}, {}
     for _, killer in ipairs(Killers:GetChildren()) do
         if killer:IsA("Model") and not seen[killer.Name] then
@@ -4444,7 +4444,7 @@ local function TeleportGetAliveKillerOptions()
     return options
 end
 
-local function TeleportRefreshKillerDropdown()
+ function TeleportRefreshKillerDropdown()
     if updatingTeleportKillerDropdown or not teleportKillerDropdown then return end
     updatingTeleportKillerDropdown = true
     pcall(function()
@@ -4462,8 +4462,7 @@ local function TeleportRefreshKillerDropdown()
     end)
     updatingTeleportKillerDropdown = false
 end
-
-local function TeleportRefreshPlayerDropdown()
+ function TeleportRefreshPlayerDropdown()
     if updatingTeleportPlayerDropdown or not teleportPlayerDropdown then return end
     updatingTeleportPlayerDropdown = true
     pcall(function()
@@ -4482,7 +4481,7 @@ local function TeleportRefreshPlayerDropdown()
     updatingTeleportPlayerDropdown = false
 end
 
-local function TeleportBehindTarget(target)
+function TeleportBehindTarget(target)
     local character = LocalPlayer.Character
     local root = TeleportGetRoot(target)
     if not character or not root then return end
