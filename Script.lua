@@ -4501,7 +4501,7 @@ end
 
 local SelectedProtectPlayer = nil
 local ProtectPlayerEnabled = false
-local protectPlayerDropdown = nil
+protectPlayerDropdown = nil
 local protectPlayerHeartbeat = nil
 local protectPlayerCharacterAdded = nil
 
