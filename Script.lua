@@ -1,3 +1,225 @@
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace = game:GetService("Workspace")
+local SoundService = game:GetService("SoundService")
+local TextChatService = game:GetService("TextChatService")
+local StarterGui = game:GetService("StarterGui")
+local Lighting = game:GetService("Lighting")
+local UserInputService = game:GetService("UserInputService")
+
+local FindFirstChild = game.FindFirstChild
+local FindChildOfClass = game.FindFirstChildOfClass
+local InstanceNew = Instance.new
+
+local LocalPlayer = Players.LocalPlayer
+
+local function WaitForChildContinue(parent, name, timeout)
+    if not parent then
+        return nil
+    end
+    return parent:WaitForChild(name, timeout or 5)
+end
+
+local Killers = WaitForChildContinue(Workspace, "Killers", 5)
+local RemoteEvents = WaitForChildContinue(ReplicatedStorage, "Remote Events", 5)
+local reloadEvent = WaitForChildContinue(RemoteEvents, "Reload", 5)
+local WeaponModule = WaitForChildContinue(ReplicatedStorage, "Weapon", 5)
+
+local KILLER_COLOR = Color3.fromRGB(255, 100, 100)
+local PLAYER_COLOR = Color3.fromRGB(255, 255, 255)
+local pacotesClonados = {}
+local trackedKillers = {}
+local limitePenteArmaAtual = 30
+local executandoRecarga = false
+
+local Config = {
+    InfAmmo = false,
+    InfAmmo2 = false,
+    NoRecoil = false,
+    NoSpread = false,
+    FireRate2x = false,
+    NoBolt = false,
+
+    KillerESP = false,
+    PlayerESP = false,
+    WeaponESP = false,
+    ESPName = false,
+    NoFog = false,
+
+    NoKillBricks = false,
+
+    NoBlockChat = false,
+    MuteFireSound = false,
+
+    SpeedBoost = false,
+    BulletSpeed3x = false,
+    BulletSpeedMultiplier = 3,
+    Wallbang = false,
+
+    KillerCameraAim = false,
+    WallCheck = true,
+    SpeedBoostAmount = 15,
+    KillerAimPart = "Head",
+    GunKillAura = false,
+    NoclipDoors = false,
+    KillerMoreDamage = false,
+    KillAll = false,
+    ProtectPlayer = false,
+}
+
+
+local WeaponPropertyBackup = {}
+local AnimationModuleBackup = {}
+local FireRateStatsBackup = setmetatable({}, {__mode = "k"})
+local ChatStateBackup = nil
+
+local function backupProperty(tbl, key)
+    if not tbl or WeaponPropertyBackup[tbl] == nil then
+        WeaponPropertyBackup[tbl] = {}
+    end
+
+    if WeaponPropertyBackup[tbl][key] == nil then
+        WeaponPropertyBackup[tbl][key] = {
+            Exists = tbl[key] ~= nil,
+            Value = tbl[key]
+        }
+    end
+end
+
+local function setWeaponProperty(tbl, key, value)
+    backupProperty(tbl, key)
+    tbl[key] = value
+end
+
+local function restoreWeaponProperty(tbl, key)
+    local backup = WeaponPropertyBackup[tbl]
+    local data = backup and backup[key]
+
+    if not data then
+        return
+    end
+
+    if data.Exists then
+        tbl[key] = data.Value
+    else
+        tbl[key] = nil
+    end
+end
+
+local function applyWeaponToggles()
+    if not WeaponModule or not WeaponModule:IsA("ModuleScript") then
+        return
+    end
+
+    pcall(function()
+        local t = require(WeaponModule)
+        if typeof(t) ~= "table" then
+            return
+        end
+
+        if Config.NoBolt then
+            setWeaponProperty(t, "is_auto", true)
+            setWeaponProperty(t, "bolt_fire", false)
+            setWeaponProperty(t, "bolt_cancelled", true)
+        else
+            restoreWeaponProperty(t, "is_auto")
+            restoreWeaponProperty(t, "bolt_fire")
+            restoreWeaponProperty(t, "bolt_cancelled")
+        end
+
+        if Config.NoSpread then
+            setWeaponProperty(t, "inaccuracy", 0)
+        else
+            restoreWeaponProperty(t, "inaccuracy")
+        end
+
+        local recoilKeys = {"recoil", "recoil_amount", "recoil_speed", "recoil_return"}
+        for _, key in ipairs(recoilKeys) do
+            if Config.NoRecoil then
+                setWeaponProperty(t, key, 0)
+            else
+                restoreWeaponProperty(t, key)
+            end
+        end
+
+        if Config.InfAmmo then
+            setWeaponProperty(t, "ReloadTime", 0.001)
+            setWeaponProperty(t, "reload_time", 0.001)
+            setWeaponProperty(t, "reload_wait", newcclosure(function()
+                return task.wait(0.001)
+            end))
+        else
+            restoreWeaponProperty(t, "ReloadTime")
+            restoreWeaponProperty(t, "reload_time")
+            restoreWeaponProperty(t, "reload_wait")
+        end
+    end)
+end
+
+local function aplicarAnimacoesNoBolt()
+    if not Config.NoBolt then
+        return
+    end
+
+    if not WeaponModule then
+        return
+    end
+
+    for _, desc in ipairs(WeaponModule:GetDescendants()) do
+        if desc:IsA("ModuleScript") then
+            local name = string.lower(desc.Name)
+            if name == "reload" or name == "bolt" or (desc.Parent and desc.Parent.Name == "Animations") then
+                pcall(function()
+                    local t = require(desc)
+                    if typeof(t) == "table" then
+                        if not AnimationModuleBackup[t] then
+                            local original = {}
+                            for k, v in pairs(t) do
+                                original[k] = v
+                            end
+                            AnimationModuleBackup[t] = original
+                        end
+                        for k in pairs(t) do
+                            t[k] = nil
+                        end
+                    end
+                end)
+            end
+        end
+    end
+end
+
+local function restaurarAnimacoesNoBolt()
+    for t, original in pairs(AnimationModuleBackup) do
+        pcall(function()
+            for k in pairs(t) do
+                t[k] = nil
+            end
+            for k, v in pairs(original) do
+                t[k] = v
+            end
+        end)
+    end
+    table.clear(AnimationModuleBackup)
+end
+
+
+local ALLOWED_WEAPON_MAPS = {
+    [4678052190] = true,
+    [1076129670] = true
+}
+
+local espArmasAutorizado = ALLOWED_WEAPON_MAPS[game.PlaceId] or false
+
+local GREEN_WEAPONS = {
+    ["RayGun"] = true,
+    ["Crossbow"] = true,
+    ["AWP"] = true
+}
+
+local WEAPON_CHECK_INTERVAL = 0.1
+local nextWeaponCheck = 0
 local criadosArmas = {}
 
 if espArmasAutorizado then
@@ -131,8 +353,17 @@ end
 
 
 
-LocalPlayer.PlayerGui:WaitForChild("Ammo"):WaitForChild("AmmoLeft").Changed:Connect(function()
-    local ammoLeft = LocalPlayer.PlayerGui.Ammo.AmmoLeft
+local ammoGui = WaitForChildContinue(LocalPlayer:FindFirstChild("PlayerGui"), "Ammo", 5)
+local ammoLeft = WaitForChildContinue(ammoGui, "AmmoLeft", 5)
+
+if ammoLeft then
+    ammoLeft.Changed:Connect(function()
+    local currentAmmoGui = LocalPlayer:FindFirstChild("PlayerGui")
+    local currentAmmo = currentAmmoGui and currentAmmoGui:FindFirstChild("Ammo")
+    local ammoLeft = currentAmmo and currentAmmo:FindFirstChild("AmmoLeft")
+    if not ammoLeft then
+        return
+    end
     local partes = string.split(ammoLeft.Text, "|")
 
     -- Inf Ammo 2: usa SOMENTE o segundo numero.
@@ -166,7 +397,8 @@ LocalPlayer.PlayerGui:WaitForChild("Ammo"):WaitForChild("AmmoLeft").Changed:Conn
             end
         end
     end
-end)
+    end)
+end
 
 local FogBackup = nil
 
@@ -267,7 +499,6 @@ local function getKillerControllerDisplayName(killer)
                         return player.DisplayName
                     end
                 end
-
                 local owner = obj:FindFirstChild("Player")
                     or obj:FindFirstChild("Owner")
                     or obj:FindFirstChild("Controller")
@@ -421,7 +652,7 @@ local function aplicarEspJogador(p)
             return
         end
 
-        local hum = char:WaitForChild("Humanoid", 5)
+        local hum = WaitForChildContinue(char, "Humanoid", 5)
 
         if not hum or hum.Health <= 0 then
             return
@@ -483,7 +714,7 @@ Players.PlayerAdded:Connect(aplicarEspJogador)
 
 
 
-local AREA51 = Workspace:WaitForChild("AREA51")
+local AREA51 = WaitForChildContinue(Workspace, "AREA51", 5)
 
 
 
@@ -760,7 +991,6 @@ local function substituirSpinner(obj)
     
     novaPart.Size = tamanho
 
-    
     novaPart.CFrame = CFrame.new(centro)
 
     
@@ -1068,7 +1298,7 @@ local function noBlockChatIsKiller()
 end
 
 local function getNoBlockChatGuiParent()
-    local parent = LocalPlayer:WaitForChild("PlayerGui")
+    local parent = WaitForChildContinue(LocalPlayer, "PlayerGui", 5)
 
     pcall(function()
         if typeof(gethui) == "function" then
@@ -1772,7 +2002,7 @@ metatable.__namecall =
 
                     task.wait(0.1)
 
-                    pacotesClonados[buf] =
+                        pacotesClonados[buf] =
                         nil
 
                 end)
@@ -1790,6 +2020,7 @@ setreadonly(
     metatable,
     true
 )
+
 local function clearKillerESP()
     for killer in pairs(trackedKillers) do
         removeHighlight(killer)
@@ -1862,8 +2093,12 @@ local function startSpeedBoost()
     local function setupCharacter(character)
         stopSpeedBoost()
 
-        local humanoid = character:WaitForChild("Humanoid")
-        local rootPart = character:WaitForChild("HumanoidRootPart")
+        local humanoid = WaitForChildContinue(character, "Humanoid", 5)
+        local rootPart = WaitForChildContinue(character, "HumanoidRootPart", 5)
+
+        if not humanoid or not rootPart then
+            return
+        end
 
         speedConnection = RunService.Heartbeat:Connect(function()
             if not Config.SpeedBoost then
@@ -2256,7 +2491,6 @@ local function GunKillAuraProcessBullet(bullet)
     if not killer or not target then
         return
     end
-
     gunKillAuraChaseTargets[bullet] = {
         Killer = killer,
         Part = target,
@@ -2782,6 +3016,7 @@ local function StartNoclipDoors()
     end)
 end
 
+
 -- Killer: More damage
 local KillerMoreDamageMultiplier = 2
 local KillerMoreDamageBackup = {}
@@ -3306,7 +3541,7 @@ local function BindKillPlayerPlayer(player)
         refresh()
 
         local humanoid = character:FindFirstChildOfClass("Humanoid")
-            or character:WaitForChild("Humanoid", 5)
+            or WaitForChildContinue(character, "Humanoid", 5)
 
         if humanoid then
             humanoid.Died:Connect(function()
@@ -3774,6 +4009,7 @@ local function getAvailableWeaponNames()
     if not container then
         return result
     end
+
     if game.PlaceId == 4678052190 then
         -- Estrutura:
         -- Workspace.Weapons.Arma.Arma
@@ -3794,7 +4030,6 @@ local function getAvailableWeaponNames()
                         break
                     end
                 end
-
                 -- Se o pai desaparecer, ele nem chega neste loop.
                 -- Se o pai existir mas o filho de mesmo nome desaparecer,
                 -- a arma também sai do dropdown.
@@ -4212,12 +4447,12 @@ local teleportPlayerListKey = ""
 local updatingTeleportKillerDropdown = false
 local updatingTeleportPlayerDropdown = false
 
-function TeleportGetRoot(character)
+local function TeleportGetRoot(character)
     if not character then return nil end
     return character:FindFirstChild("HumanoidRootPart") or character:FindFirstChild("Torso")
 end
 
-function TeleportGetAliveKillerOptions()
+local function TeleportGetAliveKillerOptions()
     local options, seen = {}, {}
     for _, killer in ipairs(Killers:GetChildren()) do
         if killer:IsA("Model") and not seen[killer.Name] then
@@ -4232,7 +4467,24 @@ function TeleportGetAliveKillerOptions()
     return options
 end
 
- function TeleportRefreshKillerDropdown()
+local function TeleportGetPlayerOptions()
+    local options, seen = {}, {}
+    local folder = Workspace:FindFirstChild("Characters to kill")
+    if not folder then return options end
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            local char = player.Character
+            if char and char:IsDescendantOf(folder) and KillAllIsAlive(char) and TeleportGetRoot(char) and not seen[player.Name] then
+                seen[player.Name] = true
+                options[#options + 1] = player.Name
+            end
+        end
+    end
+    table.sort(options, function(a,b) return string.lower(a) < string.lower(b) end)
+    return options
+end
+
+local function TeleportRefreshKillerDropdown()
     if updatingTeleportKillerDropdown or not teleportKillerDropdown then return end
     updatingTeleportKillerDropdown = true
     pcall(function()
@@ -4250,7 +4502,8 @@ end
     end)
     updatingTeleportKillerDropdown = false
 end
- function TeleportRefreshPlayerDropdown()
+
+local function TeleportRefreshPlayerDropdown()
     if updatingTeleportPlayerDropdown or not teleportPlayerDropdown then return end
     updatingTeleportPlayerDropdown = true
     pcall(function()
@@ -4269,7 +4522,7 @@ end
     updatingTeleportPlayerDropdown = false
 end
 
-function TeleportBehindTarget(target)
+local function TeleportBehindTarget(target)
     local character = LocalPlayer.Character
     local root = TeleportGetRoot(target)
     if not character or not root then return end
@@ -4278,117 +4531,134 @@ function TeleportBehindTarget(target)
     end)
 end
 
-
 -- ============================================================
--- PROTECT PLAYER
--- Fica exatamente ~1 stud na frente do jogador protegido.
--- Não faz órbita circular nem gira o personagem.
--- O personagem apenas acompanha o alvo e olha para o Killer
--- mais próximo. Ao morrer, volta para a posição ao respawnar.
+-- PROTECT PLAYER / HUMAN SHIELD
+-- Stays 1 stud in front of the selected player.
+-- Faces the nearest Killer without spinning around.
+-- Continues after local respawn until manually disabled.
 -- ============================================================
-
 local SelectedProtectPlayer = nil
-local ProtectPlayerEnabled = false
-protectPlayerDropdown = nil
-local protectPlayerHeartbeat = nil
-local protectPlayerCharacterAdded = nil
+local protectPlayerDropdown = nil
+local protectPlayerListKey = ""
+local updatingProtectPlayerDropdown = false
+local protectPlayerCharacterConnection = nil
+local protectPlayerHeartbeatConnection = nil
+local protectPlayerRespawnToken = 0
 
-function ProtectPlayerGetTarget()
+local function ProtectPlayerGetAliveRoot(character)
+    if not character then return nil end
+
+    local hum = character:FindFirstChildOfClass("Humanoid")
+        or character:FindFirstChild("Humanoid", true)
+
+    if not hum or hum.Health <= 0 then
+        return nil
+    end
+
+    return TeleportGetRoot(character)
+end
+
+local function ProtectPlayerGetOptions()
+    -- Same player-selection system used by "Select Player to teleport".
+    return TeleportGetPlayerOptions()
+end
+
+local function ProtectPlayerRefreshDropdown()
+    if updatingProtectPlayerDropdown or not protectPlayerDropdown then
+        return
+    end
+
+    updatingProtectPlayerDropdown = true
+
+    pcall(function()
+        local options = ProtectPlayerGetOptions()
+        local key = table.concat(options, "\31")
+
+        if key ~= protectPlayerListKey then
+            protectPlayerListKey = key
+
+            local valid = false
+
+            if SelectedProtectPlayer then
+                for _, name in ipairs(options) do
+                    if name == SelectedProtectPlayer then
+                        valid = true
+                        break
+                    end
+                end
+            end
+
+            if not valid then
+                SelectedProtectPlayer = nil
+            end
+
+            protectPlayerDropdown:Refresh(options, false)
+        end
+    end)
+
+    updatingProtectPlayerDropdown = false
+end
+
+local function ProtectPlayerGetNearestKiller(position)
+    local closestKiller = nil
+    local closestDistance = math.huge
+
+    if not position then
+        return nil
+    end
+
+    for _, killer in ipairs(Killers:GetChildren()) do
+        if killer:IsA("Model") then
+            local root = ProtectPlayerGetAliveRoot(killer)
+
+            if root then
+                local distance = (root.Position - position).Magnitude
+
+                if distance < closestDistance then
+                    closestDistance = distance
+                    closestKiller = killer
+                end
+            end
+        end
+    end
+
+    return closestKiller
+end
+
+local function ProtectPlayerGetTarget()
     if not SelectedProtectPlayer then
         return nil
     end
 
     local player = Players:FindFirstChild(SelectedProtectPlayer)
-    if not player or not player.Character then
+    if not player then
         return nil
     end
 
     local folder = Workspace:FindFirstChild("Characters to kill")
     local character = player.Character
 
-    if not folder or not character:IsDescendantOf(folder) then
+    if not folder
+        or not character
+        or not character:IsDescendantOf(folder) then
         return nil
     end
 
-    local humanoid = character:FindFirstChildOfClass("Humanoid")
-        or character:FindFirstChild("Humanoid", true)
+    local root = ProtectPlayerGetAliveRoot(character)
 
-    local root = TeleportGetRoot(character)
-
-    if not humanoid or humanoid.Health <= 0 or not root then
+    if not root then
         return nil
     end
 
     return player, character, root
 end
 
-local function ProtectPlayerGetNearestKiller(position)
-    if not position then
-        return nil
-    end
-
-    local nearest = nil
-    local nearestDistance = math.huge
-
-    for _, killer in ipairs(Killers:GetChildren()) do
-        if killer:IsA("Model") then
-            local humanoid = killer:FindFirstChildOfClass("Humanoid")
-                or killer:FindFirstChild("Humanoid", true)
-            local root = TeleportGetRoot(killer)
-
-            if humanoid and humanoid.Health > 0 and root then
-                local distance = (root.Position - position).Magnitude
-
-                if distance < nearestDistance then
-                    nearestDistance = distance
-                    nearest = killer
-                end
-            end
-        end
-    end
-
-    return nearest
-end
-
-local function ProtectPlayerGetOptions()
-    -- Usa exatamente o mesmo sistema de seleção do Teleport.
-    return TeleportGetPlayerOptions()
-end
-
-local function ProtectPlayerRefreshDropdown()
-    if not protectPlayerDropdown then
-        return
-    end
-
-    pcall(function()
-        local options = ProtectPlayerGetOptions()
-
-        local valid = false
-
-        if SelectedProtectPlayer then
-            for _, name in ipairs(options) do
-                if name == SelectedProtectPlayer then
-                    valid = true
-                    break
-                end
-            end
-        end
-
-        if not valid then
-            SelectedProtectPlayer = nil
-        end
-
-        protectPlayerDropdown:Refresh(options, false)
-    end)
-end
-
-local function ProtectPlayerUpdate()
-    if not ProtectPlayerEnabled then
+local function ProtectPlayerMoveToShieldPosition()
+    if not Config.ProtectPlayer then
         return
     end
 
     local _, _, targetRoot = ProtectPlayerGetTarget()
-
     if not targetRoot then
         return
     end
@@ -4400,74 +4670,93 @@ local function ProtectPlayerUpdate()
         return
     end
 
-    -- Frente do jogador protegido: exatamente ~1 stud.
     local shieldPosition =
-        targetRoot.Position + targetRoot.CFrame.LookVector
+        targetRoot.Position
+        + targetRoot.CFrame.LookVector
 
-    -- Olha para o Killer mais próximo, sem qualquer rotação artificial.
     local nearestKiller =
         ProtectPlayerGetNearestKiller(targetRoot.Position)
 
     pcall(function()
         if nearestKiller then
-            local killerRoot = TeleportGetRoot(nearestKiller)
+            local killerRoot = ProtectPlayerGetAliveRoot(nearestKiller)
 
             if killerRoot then
-                character:PivotTo(
-                    CFrame.lookAt(
-                        shieldPosition,
-                        killerRoot.Position
-                    )
+                myRoot.CFrame = CFrame.lookAt(
+                    shieldPosition,
+                    killerRoot.Position
                 )
                 return
             end
         end
 
-        -- Sem Killer: mantém a orientação do jogador protegido.
-        character:PivotTo(
+        -- No Killer found: stay in front without artificial spinning.
+        myRoot.CFrame =
             CFrame.lookAt(
                 shieldPosition,
                 shieldPosition + targetRoot.CFrame.LookVector
             )
-        )
     end)
 end
 
-local function ProtectPlayerStop()
-    if protectPlayerHeartbeat then
-        protectPlayerHeartbeat:Disconnect()
-        protectPlayerHeartbeat = nil
+local function ProtectPlayerStopConnections()
+    if protectPlayerHeartbeatConnection then
+        pcall(function()
+            protectPlayerHeartbeatConnection:Disconnect()
+        end)
+        protectPlayerHeartbeatConnection = nil
     end
 
-    if protectPlayerCharacterAdded then
-        protectPlayerCharacterAdded:Disconnect()
-        protectPlayerCharacterAdded = nil
+    if protectPlayerCharacterConnection then
+        pcall(function()
+            protectPlayerCharacterConnection:Disconnect()
+        end)
+        protectPlayerCharacterConnection = nil
     end
 end
 
 local function ProtectPlayerStart()
-    ProtectPlayerStop()
+    ProtectPlayerStopConnections()
 
-    protectPlayerHeartbeat = RunService.Heartbeat:Connect(function()
-        if ProtectPlayerEnabled then
-            ProtectPlayerUpdate()
-        end
-    end)
+    protectPlayerRespawnToken += 1
+    local token = protectPlayerRespawnToken
 
-    protectPlayerCharacterAdded =
-        LocalPlayer.CharacterAdded:Connect(function()
-            if not ProtectPlayerEnabled then
+    protectPlayerHeartbeatConnection =
+        RunService.Heartbeat:Connect(function()
+            if not Config.ProtectPlayer or token ~= protectPlayerRespawnToken then
                 return
             end
 
-            task.wait()
-
-            if ProtectPlayerEnabled then
-                ProtectPlayerUpdate()
-            end
+            ProtectPlayerMoveToShieldPosition()
         end)
 
-    task.defer(ProtectPlayerUpdate)
+    protectPlayerCharacterConnection =
+        LocalPlayer.CharacterAdded:Connect(function(character)
+            if not Config.ProtectPlayer or token ~= protectPlayerRespawnToken then
+                return
+            end
+
+            task.spawn(function()
+                local root = WaitForChildContinue(character, "HumanoidRootPart", 5)
+                    or WaitForChildContinue(character, "Torso", 5)
+
+                if not Config.ProtectPlayer or token ~= protectPlayerRespawnToken then
+                    return
+                end
+
+                if root then
+                    task.wait()
+                    ProtectPlayerMoveToShieldPosition()
+                end
+            end)
+        end)
+
+    task.defer(ProtectPlayerMoveToShieldPosition)
+end
+
+local function ProtectPlayerStop()
+    protectPlayerRespawnToken += 1
+    ProtectPlayerStopConnections()
 end
 
 protectPlayerDropdown = MiscTab:CreateDropdown({
@@ -4476,40 +4765,61 @@ protectPlayerDropdown = MiscTab:CreateDropdown({
     CurrentOption = {},
     MultipleOptions = false,
     Flag = "SelectProtectPlayer",
-
     Callback = function(Option)
         SelectedProtectPlayer = Option[1] or Option
 
-        if ProtectPlayerEnabled then
-            task.defer(ProtectPlayerUpdate)
+        if Config.ProtectPlayer then
+            task.defer(ProtectPlayerMoveToShieldPosition)
         end
     end
 })
 
 MiscTab:CreateToggle({
     Name = "Protect Player",
-    CurrentValue = false,
+    CurrentValue = Config.ProtectPlayer,
     Flag = "ProtectPlayer",
-
     Callback = function(Value)
-        ProtectPlayerEnabled = Value
+        Config.ProtectPlayer = Value
 
         if Value then
             ProtectPlayerStart()
-            task.defer(ProtectPlayerRefreshDropdown)
         else
             ProtectPlayerStop()
         end
     end
 })
 
+Players.PlayerAdded:Connect(function(player)
+    if player == LocalPlayer then
+        return
+    end
+
+    player.CharacterAdded:Connect(function()
+        task.defer(ProtectPlayerRefreshDropdown)
+    end)
+
+    player.CharacterRemoving:Connect(function()
+        if SelectedProtectPlayer == player.Name then
+            SelectedProtectPlayer = nil
+        end
+
+        task.defer(ProtectPlayerRefreshDropdown)
+    end)
+end)
+
+Players.PlayerRemoving:Connect(function(player)
+    if SelectedProtectPlayer == player.Name then
+        SelectedProtectPlayer = nil
+    end
+
+    task.defer(ProtectPlayerRefreshDropdown)
+end)
+
 task.spawn(function()
     while task.wait(0.25) do
         pcall(ProtectPlayerRefreshDropdown)
     end
 end)
-
-task.defer(ProtectPlayerRefreshDropdown)
 
 teleportKillerDropdown = TeleportTab:CreateDropdown({
     Name = "Select Killer to teleport", Options = {}, CurrentOption = {},
@@ -4563,7 +4873,7 @@ local function BindTeleportPlayer(player)
     local function refresh() task.defer(TeleportRefreshPlayerDropdown) end
     player.CharacterAdded:Connect(function(character)
         refresh()
-        local hum = character:FindFirstChildOfClass("Humanoid") or character:WaitForChild("Humanoid", 5)
+        local hum = character:FindFirstChildOfClass("Humanoid") or WaitForChildContinue(character, "Humanoid", 5)
         if hum then hum.Died:Connect(function()
             if SelectedTeleportPlayer == player.Name then SelectedTeleportPlayer = nil end
             refresh()
