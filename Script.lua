@@ -4445,19 +4445,31 @@ local function TeleportGetAliveKillerOptions()
 end
 
 local function TeleportGetPlayerOptions()
-    local options, seen = {}, {}
+    local options = {}
     local folder = Workspace:FindFirstChild("Characters to kill")
-    if not folder then return options end
+
+    if not folder then
+        return options
+    end
+
     for _, player in ipairs(Players:GetPlayers()) do
         if player ~= LocalPlayer then
             local char = player.Character
-            if char and char:IsDescendantOf(folder) and KillAllIsAlive(char) and TeleportGetRoot(char) and not seen[player.Name] then
-                seen[player.Name] = true
+
+            if char
+                and char:IsDescendantOf(folder)
+                and KillAllIsAlive(char)
+                and TeleportGetRoot(char)
+            then
                 options[#options + 1] = player.Name
             end
         end
     end
-    table.sort(options, function(a,b) return string.lower(a) < string.lower(b) end)
+
+    table.sort(options, function(a, b)
+        return string.lower(a) < string.lower(b)
+    end)
+
     return options
 end
 
