@@ -4505,7 +4505,7 @@ local protectPlayerDropdown = nil
 local protectPlayerHeartbeat = nil
 local protectPlayerCharacterAdded = nil
 
-local function ProtectPlayerGetTarget()
+function ProtectPlayerGetTarget()
     if not SelectedProtectPlayer then
         return nil
     end
